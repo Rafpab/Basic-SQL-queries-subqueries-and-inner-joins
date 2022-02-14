@@ -1,0 +1,97 @@
+#This is the code for my final project in the IBM course SQL for Data Science. As you can see, we are working with SQL here, but through R, using the RODBC library.
+#In this project, datasets are related to crops harvested and their prices in different provinces of Canada. 
+
+#First, we establish a connection to the database with which we are going to work and perform our queries. In this case, the database is DB2 of IBM cloud tools.
+
+library("RODBC")
+dsn_driver <- "{IBM DB2 ODBC Driver}"
+dsn_database <- "bludb"
+dsn_hostname <- "fbd88901-ebdb-4a4f-a32e-9822b9fb237b.c1ogj3sd0tgtu0lqde00.databases.appdomain.cloud"
+dsn_port <- "****"
+dsn_protocol <- "TCPIP"
+dsn_uid <- "*****"
+dsn_pwd <- "*****"
+dsn_security <- "ssl"
+
+connpath <- paste("DRIVER=",dsn_driver,
+                  ";DATABASE=",dsn_database,
+                  ";HOSTNAME=",dsn_hostname,
+                  ";PORT=",dsn_port,
+                  ";PROTOCOL=",dsn_protocol,
+                 ";UID=",dsn_uid,
+                  ";PWD=",dsn_pwd,
+                  ";SECURITY=",dsn_security,
+                  sep="")
+conn <- odbcDriverConnect(connpath,believeNRows=FALSE)
+conn
+
+#Of course, port, uid and pwd should be replaced according to each user specifications.
+
+#Now we create the tables in which we are going to store our data. In this case, I performed this operation accordingly to the specifications of files with which i was already
+#familiar, given the fact that this is the final project of the course. However, one can do a visual inspection of data in the SQL database of one's preference to see
+#which are the right classes for each attribute.
+
+croptable <- sqlQuery(conn,"CREATE TABLE CROP_DATA(INDEX_CROP INT NOT NULL, YEAR VARCHAR(255),CROP_TYPE VARCHAR(255),
+                                      GEO VARCHAR(255),SEEDED_AREA INT, HARVESTED_AREA INT,
+                                     PRODUCTION INT,AVG_YIELD INT, PRIMARY KEY (INDEX_CROP))",errors = FALSE)
+                                     
+farmtable <- sqlQuery(conn,"CREATE TABLE FARM_PRICES(INDEX_FARM INT NOT NULL, DATE VARCHAR(255),CROP_TYPE VARCHAR(255),
+                                      GEO VARCHAR(255),MT_PRICE NUMERIC, PRIMARY KEY (INDEX_FARM))",errors = FALSE)
+                                      
+fxdaytable <- sqlQuery(conn, "CREATE TABLE DAILY_FX(INDEX_FX INT NOT NULL, DATE DATE,USD_CAD NUMERIC, PRIMARY KEY (INDEX_FX))",errors = FALSE)
+
+fxmonthtable <- sqlQuery(conn, "CREATE TABLE MONTHLY_FX(INDEX_FX INT NOT NULL, DATE DATE,USD_CAD NUMERIC, PRIMARY KEY (INDEX_FX))",errors = FALSE)
+
+#Now we store our data in the cloud, in the tables we previously created using sqlSave.
+
+cropdf <- read.csv("https://cf-courses-data.s3.us.cloud-object-storage.appdomain.cloud/IBM-RP0203EN-SkillsNetwork/labs/Final%20Project/Annual_Crop_Data.csv",
+                   colClasses = c(YEAR="character"))
+farmdf <- read.csv("https://cf-courses-data.s3.us.cloud-object-storage.appdomain.cloud/IBM-RP0203EN-SkillsNetwork/labs/Final%20Project/Monthly_Farm_Prices.csv",
+                  colClasses = c(date="character"))
+fxdailydf <- read.csv("https://cf-courses-data.s3.us.cloud-object-storage.appdomain.cloud/IBM-RP0203EN-SkillsNetwork/labs/Final%20Project/Daily_FX.csv",
+                     colClasses = c(date="character"))
+fxmonthlydf <- read.csv("https://cf-courses-data.s3.us.cloud-object-storage.appdomain.cloud/IBM-RP0203EN-SkillsNetwork/labs/Final%20Project/Monthly_FX.csv",
+                       colClasses = c(date="character"))
+
+sqlSave(conn,cropdf,"CROP_DATA", append=TRUE, fast=FALSE, rownames=FALSE, colnames=FALSE, verbose=FALSE)
+sqlSave(conn, farmdf, "FARM_PRICES", append=TRUE, fast=FALSE, rownames=FALSE, colnames=FALSE, verbose=FALSE)
+sqlSave(conn, fxdailydf, "DAILY_FX", append=TRUE, fast=FALSE, rownames=FALSE, colnames=FALSE, verbose=FALSE)
+sqlSave(conn, fxmonthlydf, "MONTHLY_FX", append=TRUE, fast=FALSE, rownames=FALSE, colnames=FALSE, verbose=FALSE)
+
+#Now some basic queries.
+#With this, we can count how many records there are in a dataset.
+
+farmcount <- "SELECT COUNT(INDEX_FARM) FROM FARM_PRICES"
+sqlQuery(conn,farmcount)
+
+#Distinct is one of the most basic and useful tools of SQL for inspecting data.This will tel us different cities in Canada where data is collected.
+
+geofarm <- "SELECT DISTINCT(GEO) FROM FARM_PRICES"
+sqlQuery(conn,geofarm)
+
+#Now, if we wanted to know the amount of area harvested in a given year, we would do something like this: 
+
+harvestedarea <- "SELECT SUM(HARVESTED_AREA) FROM CROP_DATA WHERE YEAR(YEAR)=1968;"
+sqlQuery(conn,harvestedarea)
+
+#In case we would like to know which provinces grew a certain type of crops, this would be the query. We use 'WHERE' as a conditional for calling a certain kind of response.
+
+provincesbarley <- "SELECT DISTINCT(GEO) FROM CROP_DATA WHERE CROP_TYPE = 'Barley';"
+sqlQuery(conn,provincesbarley)
+
+#here is another example where I used the WHERE clause to find crops that had a price above a certain threshold.
+
+prices <- "SELECT DISTINCT(CROP_TYPE) FROM FARM_PRICES WHERE MT_PRICE >= 350;"
+sqlQuery(conn,prices)
+
+#Now, we can do something a bit more complex. Using more than one conditional, in this query I can return the average of all distinct types of harvest of a single geo location
+#for a single year, with its results ranked from highest to lowest.
+
+averageyield <- "SELECT AVG(AVG_YIELD) AS AVG_YIELD, CROP_TYPE FROM CROP_DATA WHERE YEAR(YEAR) = 2000 AND GEO = 'Saskatchewan' GROUP BY CROP_TYPE ORDER BY AVG_YIELD DESC;"
+sqlQuery(conn, averageyield)
+
+#Now, an example of a subquery. Here we are going to do, besides our main query, another query that returns the value necessary for our condition
+
+wheatproduction <- "SELECT SUM(PRODUCTION) FROM CROP_DATA WHERE CROP_TYPE = 'Wheat' AND GEO = 'Canada' AND YEAR(YEAR) = (SELECT MAX(YEAR(YEAR)) FROM CROP_DATA";
+sqlQuery(conn,wheatproduction)
+
